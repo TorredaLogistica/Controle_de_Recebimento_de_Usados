@@ -103,7 +103,7 @@ if vis.startswith("📅"):
         f"""
         <div class="mes-referencia-wrap">
             <div class="mes-referencia-badge">
-                📅 Mês de referência selecionado: <strong>{mes_formatado}</strong>
+                📅 Mês de referência: <strong>{mes_formatado}</strong>
             </div>
         </div>
         """,
