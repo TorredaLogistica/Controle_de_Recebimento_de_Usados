@@ -111,11 +111,26 @@ if vis.startswith("📅"):
     )
     data=base[base.MES_REF==pd.Timestamp(mes)].copy(); cards(data); c1,c2=st.columns([1.55,1])
     with c1:
-        daily=data.groupby(data["DATA RECEBIMENTO"].dt.date,as_index=False).agg(Recebimentos=("NOTAFISCAL","size"))
-        daily["Dia"]=pd.to_datetime(daily["DATA RECEBIMENTO"]).dt.day.astype(str); ordem=daily.Dia.tolist()
-        fig=px.bar(daily,x="Dia",y="Recebimentos",text="Recebimentos",title=f"Recebimentos por dia | {pd.Timestamp(mes):%m/%Y}",category_orders={"Dia":ordem})
-        fig.update_traces(textposition="inside",textfont_color="white"); fig.update_xaxes(title_text="Dia do mês",type="category",tickmode="array",tickvals=ordem,ticktext=ordem,tickangle=0); fig.update_layout(bargap=.18)
-        st.plotly_chart(fig,use_container_width=True)
+        # Cria a coluna Dia antes do agrupamento para manter compatibilidade
+        # com as versões atuais do pandas utilizadas no Streamlit Cloud.
+        daily = data.dropna(subset=["DATA RECEBIMENTO"]).copy()
+        daily["Dia_num"] = daily["DATA RECEBIMENTO"].dt.day
+        daily = (
+            daily.groupby("Dia_num", as_index=False)
+            .agg(Recebimentos=("NOTAFISCAL", "size"))
+            .sort_values("Dia_num")
+        )
+        daily["Dia"] = daily["Dia_num"].astype(str)
+        ordem = daily["Dia"].tolist()
+
+        if daily.empty:
+            st.info("Não há recebimentos com data válida para o mês e os filtros selecionados.")
+        else:
+            fig=px.bar(daily,x="Dia",y="Recebimentos",text="Recebimentos",title=f"Recebimentos por dia | {pd.Timestamp(mes):%m/%Y}",category_orders={"Dia":ordem})
+            fig.update_traces(textposition="inside",textfont_color="white")
+            fig.update_xaxes(title_text="Dia do mês",type="category",tickmode="array",tickvals=ordem,ticktext=ordem,tickangle=0)
+            fig.update_layout(bargap=.18)
+            st.plotly_chart(fig,use_container_width=True)
     with c2:
         dist=data.FAIXA_SLA.value_counts(sort=False).rename_axis("Faixa").reset_index(name="Quantidade")
         st.plotly_chart(px.bar(dist,x="Faixa",y="Quantidade",color="Faixa",text_auto=True,title="Distribuição por faixa de SLA"),use_container_width=True)
