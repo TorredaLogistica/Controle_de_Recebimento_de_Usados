@@ -105,9 +105,43 @@ if vis.startswith("📅"):
     metric_cards(data)
     c1,c2=st.columns([1.55,1])
     with c1:
-        daily=data.groupby(data["DATA RECEBIMENTO"].dt.date,as_index=False).agg(Recebimentos=("NOTAFISCAL","size"),SLA_ate_D1=("SLA_RECEBIMENTO",lambda s:(s<=1).mean()),SLA_ate_D4=("SLA_RECEBIMENTO",lambda s:(s<=4).mean()))
-        fig=px.bar(daily,x="DATA RECEBIMENTO",y="Recebimentos",text_auto=True,title=f"Recebimentos por dia | {pd.Timestamp(mes).strftime('%m/%Y')}")
-        st.plotly_chart(fig,use_container_width=True)
+        # Cria o dia antes do agrupamento para manter compatibilidade com o pandas do Streamlit Cloud.
+        daily = data.dropna(subset=["DATA RECEBIMENTO"]).copy()
+        daily["Dia_num"] = daily["DATA RECEBIMENTO"].dt.day
+        daily = (
+            daily.groupby("Dia_num", as_index=False)
+            .agg(
+                Recebimentos=("NOTAFISCAL", "size"),
+                SLA_ate_D1=("SLA_RECEBIMENTO", lambda s: (s <= 1).mean()),
+                SLA_ate_D4=("SLA_RECEBIMENTO", lambda s: (s <= 4).mean()),
+            )
+            .sort_values("Dia_num")
+        )
+        daily["Dia"] = daily["Dia_num"].astype(str)
+        ordem_dias = daily["Dia"].tolist()
+
+        if daily.empty:
+            st.info("Não há recebimentos com data válida para o mês e os filtros selecionados.")
+        else:
+            fig = px.bar(
+                daily,
+                x="Dia",
+                y="Recebimentos",
+                text="Recebimentos",
+                title=f"Recebimentos por dia | {pd.Timestamp(mes).strftime('%m/%Y')}",
+                category_orders={"Dia": ordem_dias},
+            )
+            fig.update_traces(textposition="inside", textfont_color="white")
+            fig.update_xaxes(
+                title_text="Dia do mês",
+                type="category",
+                tickmode="array",
+                tickvals=ordem_dias,
+                ticktext=ordem_dias,
+                tickangle=0,
+            )
+            fig.update_layout(bargap=0.18)
+            st.plotly_chart(fig, use_container_width=True)
     with c2:
         dist=data["FAIXA_SLA"].value_counts(sort=False).rename_axis("Faixa").reset_index(name="Quantidade")
         ordem_faixas = ["D+0", "D+1", "D+2", "D+3", "D+4", "Acima de D+4"]
