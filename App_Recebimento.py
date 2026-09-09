@@ -32,12 +32,11 @@ def load_data():
     for c in ["DATA_BASE", "DATA RECEBIMENTO", "DATA LANÇAMENTO SAP"]:
         d[c] = pd.to_datetime(d[c], errors="coerce")
     d["SLA_RECEBIMENTO"] = pd.to_numeric(d["SLA_RECEBIMENTO"], errors="coerce")
-    # O mês de referência deve vir da coluna G da planilha: DATA_BASE.
+    # Mês de referência: coluna G da base (DATA_BASE).
     d["MES_REF"] = d["DATA_BASE"].dt.to_period("M").dt.to_timestamp()
 
-    # Não restringir Tipo_recebimento nem PROCESSO nesta etapa.
-    # Assim, os volumes permanecem iguais aos da base/tabela dinâmica e
-    # a opção Obsoletos continua disponível no filtro.
+    # Mantém todos os tipos de recebimento da base, inclusive Obsoletos.
+    # O filtro lateral permite selecionar Transferência, Reversa Massivo ou Obsoletos.
     d["FAIXA_SLA"] = pd.cut(d["SLA_RECEBIMENTO"], bins=[-float("inf"),0,1,2,3,4,float("inf")], labels=["D+0","D+1","D+2","D+3","D+4","Acima de D+4"])
     return d
 
@@ -67,14 +66,14 @@ def executive_summary(data, months=3):
     for mes,g in x.groupby("MES_REF", sort=True):
         total=len(g); ate1=(g["SLA_RECEBIMENTO"]<=1).sum(); ate4=(g["SLA_RECEBIMENTO"]<=4).sum(); fora=(g["SLA_RECEBIMENTO"]>4).sum()
         lines.append(f"{mes.strftime('%m/%Y')}: {fmt_int(total)} recebimentos | Até D+1: {fmt_pct(ate1/total if total else 0)} | Até D+4: {fmt_pct(ate4/total if total else 0)} | Acima de D+4: {fmt_int(fora)} ({fmt_pct(fora/total if total else 0)})")
-    lines += ["", "Escopo: todos os registros da base, respeitando apenas os filtros selecionados."]
+    lines += ["", "Escopo: todos os tipos de recebimento disponíveis na base, conforme os filtros selecionados."]
     return "\n".join(lines)
 
 st.markdown("""<style>
 .block-container{padding-top:1.4rem}.kpi-note{background:#fff7f7;border-left:7px solid #e30613;padding:17px 22px;border-radius:10px;margin:8px 0 20px}.small{color:#65707d;font-size:.89rem}
 </style>""", unsafe_allow_html=True)
 st.title("📦 Controle de Recebimento de Materiais")
-st.markdown('<div class="kpi-note"><b>Controle de recebimentos</b><br>Monitoramento do prazo entre o recebimento físico e o lançamento no SAP, conforme os filtros selecionados.</div>', unsafe_allow_html=True)
+st.markdown('<div class="kpi-note"><b>Controle de Recebimentos</b><br>Monitoramento do prazo entre o recebimento físico e o lançamento no SAP, considerando os tipos selecionados nos filtros.</div>', unsafe_allow_html=True)
 
 df=load_data()
 with st.sidebar:
@@ -106,42 +105,105 @@ if vis.startswith("📅"):
     metric_cards(data)
     c1,c2=st.columns([1.55,1])
     with c1:
-        daily_base = data.dropna(subset=["DATA RECEBIMENTO"]).copy()
-        daily_base["DIA_RECEBIMENTO"] = daily_base["DATA RECEBIMENTO"].dt.normalize()
-        daily = daily_base.groupby("DIA_RECEBIMENTO", as_index=False).agg(
-            Recebimentos=("NOTAFISCAL", "size"),
-            SLA_ate_D1=("SLA_RECEBIMENTO", lambda s: (s <= 1).mean()),
-            SLA_ate_D4=("SLA_RECEBIMENTO", lambda s: (s <= 4).mean()),
-        )
-        fig=px.bar(daily,x="DIA_RECEBIMENTO",y="Recebimentos",text_auto=True,title=f"Recebimentos por dia | {pd.Timestamp(mes).strftime('%m/%Y')}")
-        fig.update_xaxes(
-            title="Data de recebimento",
-            tickmode="array",
-            tickvals=daily["DIA_RECEBIMENTO"],
-            ticktext=daily["DIA_RECEBIMENTO"].dt.strftime("%d/%m/%Y"),
-            tickangle=-45,
-        )
+        daily=data.groupby(data["DATA RECEBIMENTO"].dt.date,as_index=False).agg(Recebimentos=("NOTAFISCAL","size"),SLA_ate_D1=("SLA_RECEBIMENTO",lambda s:(s<=1).mean()),SLA_ate_D4=("SLA_RECEBIMENTO",lambda s:(s<=4).mean()))
+        fig=px.bar(daily,x="DATA RECEBIMENTO",y="Recebimentos",text_auto=True,title=f"Recebimentos por dia | {pd.Timestamp(mes).strftime('%m/%Y')}")
         st.plotly_chart(fig,use_container_width=True)
     with c2:
         dist=data["FAIXA_SLA"].value_counts(sort=False).rename_axis("Faixa").reset_index(name="Quantidade")
-        fig=px.bar(dist,x="Faixa",y="Quantidade",color="Faixa",text_auto=True,title="Distribuição por faixa de SLA")
+        ordem_faixas = ["D+0", "D+1", "D+2", "D+3", "D+4", "Acima de D+4"]
+        cores_sla = {
+            "D+0": "#0B70C9",
+            "D+1": "#72B9EB",
+            "D+2": "#FF1F26",
+            "D+3": "#F7A6AA",
+            "D+4": "#2AA894",
+            "Acima de D+4": "#6DDE98",
+        }
+        fig=px.bar(
+            dist,
+            x="Faixa",
+            y="Quantidade",
+            color="Faixa",
+            text_auto=True,
+            title="Distribuição por faixa de SLA",
+            category_orders={"Faixa": ordem_faixas},
+            color_discrete_map=cores_sla,
+        )
         st.plotly_chart(fig,use_container_width=True)
+
+    # Comparativo por CD no mesmo padrão visual da distribuição geral.
+    st.subheader("Distribuição do SLA por CD")
+    dados_cd = data.dropna(subset=["CD_CORRIGIDO", "FAIXA_SLA"]).copy()
+    dados_cd["CD_CORRIGIDO"] = dados_cd["CD_CORRIGIDO"].astype(str).str.strip()
+    dados_cd = dados_cd[dados_cd["CD_CORRIGIDO"] != ""]
+
+    if dados_cd.empty:
+        st.info("Não há dados de CD para o mês e os filtros selecionados.")
+    else:
+        sla_cd = (
+            dados_cd.groupby(["CD_CORRIGIDO", "FAIXA_SLA"], observed=True)
+            .size()
+            .reset_index(name="Quantidade")
+        )
+        totais_cd = (
+            sla_cd.groupby("CD_CORRIGIDO", as_index=False)["Quantidade"]
+            .sum()
+            .rename(columns={"Quantidade": "Total_CD"})
+        )
+        sla_cd = sla_cd.merge(totais_cd, on="CD_CORRIGIDO", how="left")
+        sla_cd["Percentual_CD"] = sla_cd["Quantidade"] / sla_cd["Total_CD"]
+        sla_cd["Percentual_formatado"] = sla_cd["Percentual_CD"].map(fmt_pct)
+
+        ordem_cds = (
+            totais_cd.sort_values("Total_CD", ascending=False)["CD_CORRIGIDO"]
+            .tolist()
+        )
+
+        fig_cd = px.bar(
+            sla_cd,
+            x="CD_CORRIGIDO",
+            y="Quantidade",
+            color="FAIXA_SLA",
+            text="Quantidade",
+            barmode="group",
+            title=f"SLA por CD | {pd.Timestamp(mes).strftime('%m/%Y')}",
+            category_orders={
+                "CD_CORRIGIDO": ordem_cds,
+                "FAIXA_SLA": ordem_faixas,
+            },
+            color_discrete_map=cores_sla,
+            custom_data=["Percentual_formatado", "Total_CD"],
+            labels={
+                "CD_CORRIGIDO": "CD",
+                "FAIXA_SLA": "Faixa",
+                "Quantidade": "Quantidade",
+            },
+        )
+        fig_cd.update_traces(
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate=(
+                "CD: %{x}<br>"
+                "Faixa: %{fullData.name}<br>"
+                "Quantidade: %{y}<br>"
+                "Percentual no CD: %{customdata[0]}<br>"
+                "Total do CD: %{customdata[1]}<extra></extra>"
+            ),
+        )
+        fig_cd.update_layout(
+            xaxis_title="CD",
+            yaxis_title="Quantidade",
+            legend_title_text="Faixa",
+            bargap=0.18,
+            bargroupgap=0.06,
+            height=max(480, min(760, 440 + len(ordem_cds) * 12)),
+        )
+        fig_cd.update_xaxes(tickangle=-35)
+        st.plotly_chart(fig_cd, use_container_width=True)
+
     st.subheader("Detalhamento dos recebimentos")
     detail_cols=["DATA RECEBIMENTO","DATA LANÇAMENTO SAP","Tipo_recebimento","SLA_RECEBIMENTO","STATUS RECEBIMENTO","CD_CORRIGIDO","EMPRESA","PROCESSO","ORIGEM","NOTAFISCAL"]
-    detalhe = data[detail_cols].sort_values("DATA RECEBIMENTO", ascending=False).copy()
-    st.dataframe(
-        detalhe,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "DATA RECEBIMENTO": st.column_config.DateColumn(
-                "DATA RECEBIMENTO", format="DD/MM/YYYY"
-            ),
-            "DATA LANÇAMENTO SAP": st.column_config.DateColumn(
-                "DATA LANÇAMENTO SAP", format="DD/MM/YYYY"
-            ),
-        },
-    )
+    st.dataframe(data[detail_cols].sort_values("DATA RECEBIMENTO",ascending=False),use_container_width=True,hide_index=True)
 else:
     qtd_meses=st.segmented_control("Período para comparação",[3,6,9,12],default=3,format_func=lambda n:f"Últimos {n} meses")
     maxm=base["MES_REF"].max()
