@@ -110,8 +110,97 @@ if vis.startswith("📅"):
         st.plotly_chart(fig,use_container_width=True)
     with c2:
         dist=data["FAIXA_SLA"].value_counts(sort=False).rename_axis("Faixa").reset_index(name="Quantidade")
-        fig=px.bar(dist,x="Faixa",y="Quantidade",color="Faixa",text_auto=True,title="Distribuição por faixa de SLA")
+        ordem_faixas = ["D+0", "D+1", "D+2", "D+3", "D+4", "Acima de D+4"]
+        cores_sla = {
+            "D+0": "#0B70C9",
+            "D+1": "#72B9EB",
+            "D+2": "#FF1F26",
+            "D+3": "#F7A6AA",
+            "D+4": "#2AA894",
+            "Acima de D+4": "#6DDE98",
+        }
+        fig=px.bar(
+            dist,
+            x="Faixa",
+            y="Quantidade",
+            color="Faixa",
+            text_auto=True,
+            title="Distribuição por faixa de SLA",
+            category_orders={"Faixa": ordem_faixas},
+            color_discrete_map=cores_sla,
+        )
         st.plotly_chart(fig,use_container_width=True)
+
+    # Comparativo por CD no mesmo padrão visual da distribuição geral.
+    st.subheader("Distribuição do SLA por CD")
+    dados_cd = data.dropna(subset=["CD_CORRIGIDO", "FAIXA_SLA"]).copy()
+    dados_cd["CD_CORRIGIDO"] = dados_cd["CD_CORRIGIDO"].astype(str).str.strip()
+    dados_cd = dados_cd[dados_cd["CD_CORRIGIDO"] != ""]
+
+    if dados_cd.empty:
+        st.info("Não há dados de CD para o mês e os filtros selecionados.")
+    else:
+        sla_cd = (
+            dados_cd.groupby(["CD_CORRIGIDO", "FAIXA_SLA"], observed=True)
+            .size()
+            .reset_index(name="Quantidade")
+        )
+        totais_cd = (
+            sla_cd.groupby("CD_CORRIGIDO", as_index=False)["Quantidade"]
+            .sum()
+            .rename(columns={"Quantidade": "Total_CD"})
+        )
+        sla_cd = sla_cd.merge(totais_cd, on="CD_CORRIGIDO", how="left")
+        sla_cd["Percentual_CD"] = sla_cd["Quantidade"] / sla_cd["Total_CD"]
+        sla_cd["Percentual_formatado"] = sla_cd["Percentual_CD"].map(fmt_pct)
+
+        ordem_cds = (
+            totais_cd.sort_values("Total_CD", ascending=False)["CD_CORRIGIDO"]
+            .tolist()
+        )
+
+        fig_cd = px.bar(
+            sla_cd,
+            x="CD_CORRIGIDO",
+            y="Quantidade",
+            color="FAIXA_SLA",
+            text="Quantidade",
+            barmode="group",
+            title=f"SLA por CD | {pd.Timestamp(mes).strftime('%m/%Y')}",
+            category_orders={
+                "CD_CORRIGIDO": ordem_cds,
+                "FAIXA_SLA": ordem_faixas,
+            },
+            color_discrete_map=cores_sla,
+            custom_data=["Percentual_formatado", "Total_CD"],
+            labels={
+                "CD_CORRIGIDO": "CD",
+                "FAIXA_SLA": "Faixa",
+                "Quantidade": "Quantidade",
+            },
+        )
+        fig_cd.update_traces(
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate=(
+                "CD: %{x}<br>"
+                "Faixa: %{fullData.name}<br>"
+                "Quantidade: %{y}<br>"
+                "Percentual no CD: %{customdata[0]}<br>"
+                "Total do CD: %{customdata[1]}<extra></extra>"
+            ),
+        )
+        fig_cd.update_layout(
+            xaxis_title="CD",
+            yaxis_title="Quantidade",
+            legend_title_text="Faixa",
+            bargap=0.18,
+            bargroupgap=0.06,
+            height=max(480, min(760, 440 + len(ordem_cds) * 12)),
+        )
+        fig_cd.update_xaxes(tickangle=-35)
+        st.plotly_chart(fig_cd, use_container_width=True)
+
     st.subheader("Detalhamento dos recebimentos")
     detail_cols=["DATA RECEBIMENTO","DATA LANÇAMENTO SAP","Tipo_recebimento","SLA_RECEBIMENTO","STATUS RECEBIMENTO","CD_CORRIGIDO","EMPRESA","PROCESSO","ORIGEM","NOTAFISCAL"]
     st.dataframe(data[detail_cols].sort_values("DATA RECEBIMENTO",ascending=False),use_container_width=True,hide_index=True)
