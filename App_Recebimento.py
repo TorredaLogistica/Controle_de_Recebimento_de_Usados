@@ -296,23 +296,44 @@ else:
     }
     for trace in fig_barras.data:
         destaque = trace.name in ["Até D+2", "Até D+4"]
+
+        # Exibe rótulos somente nos SLAs destacados para evitar sobreposição.
+        # Até D+4 fica acima da linha e Até D+2 abaixo da linha.
+        if trace.name == "Até D+4":
+            modo_trace = "lines+markers+text"
+            posicao_texto = "top center"
+        elif trace.name == "Até D+2":
+            modo_trace = "lines+markers+text"
+            posicao_texto = "bottom center"
+        else:
+            modo_trace = "lines+markers"
+            posicao_texto = "top center"
+
         trace.update(
-            mode="lines+markers+text",
+            mode=modo_trace,
             line=estilos_linhas[trace.name],
-            marker=dict(size=11 if destaque else 7, line=dict(width=2 if destaque else 0, color="white")),
-            textfont=dict(size=14 if destaque else 11, color=cores_acumuladas[trace.name]),
-            textposition="top center" if trace.name != "Até D+4" else "bottom center",
-            opacity=1.0 if destaque else 0.50,
-            hovertemplate="Mês: %{x}<br>%{fullData.name}: %{text}<extra></extra>",
+            marker=dict(
+                size=11 if destaque else 7,
+                line=dict(width=2 if destaque else 0, color="white"),
+            ),
+            textfont=dict(
+                size=14 if destaque else 11,
+                color=cores_acumuladas[trace.name],
+            ),
+            textposition=posicao_texto,
+            text=None if not destaque else trace.text,
+            opacity=1.0 if destaque else 0.42,
+            hovertemplate="Mês: %{x}<br>%{fullData.name}: %{customdata}<extra></extra>",
+            customdata=trace.text,
         )
 
     fig_barras.update_yaxes(
         title_text="Percentual",
         tickformat=".0%",
-        range=[0, 1.10],
+        range=[0, 1.13],
     )
     fig_barras.update_layout(
-        height=590,
+        height=620,
         legend_title_text="SLA acumulado",
         hovermode="x unified",
         margin=dict(t=80, r=30, b=70, l=65),
