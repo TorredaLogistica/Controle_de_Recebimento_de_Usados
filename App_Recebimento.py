@@ -86,8 +86,8 @@ def executive_summary(data, months=3):
 st.markdown("""<style>
 .block-container{padding-top:1.4rem}.kpi-note{background:#fff7f7;border-left:7px solid #e30613;padding:17px 22px;border-radius:10px;margin:8px 0 20px}.small{color:#65707d;font-size:.89rem}
 .sla-card{width:100%;min-height:190px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5px 3px 12px;box-sizing:border-box}
-.sla-card-title{width:100%;min-height:32px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:14px;line-height:1.3}
-.sla-card-percent{width:100%;text-align:center;font-size:18px;font-weight:700;line-height:1.2;color:#202536;margin:0 0 5px}
+.sla-card-title{width:100%;min-height:35px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:17px;font-weight:700;line-height:1.3}
+.sla-card-percent{width:100%;text-align:center;font-size:14px;font-weight:400;line-height:1.35;color:#202536;margin:0 0 5px}
 .sla-card-value{width:100%;text-align:center;font-size:39px;line-height:1.15;color:#202536;margin:0 0 10px}
 .sla-card-detail{width:100%;min-height:62px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal!important;overflow:visible!important;background:#e5f7ec;color:#008a3b;border-radius:14px;padding:8px;font-size:14px;font-weight:600;line-height:1.35;box-sizing:border-box}
 
