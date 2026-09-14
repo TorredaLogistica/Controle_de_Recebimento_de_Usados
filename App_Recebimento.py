@@ -262,7 +262,7 @@ else:
     mensal=evo.groupby("MES_REF",as_index=False).agg(Recebimentos=("NOTAFISCAL","size"),SLA_D0=("SLA_RECEBIMENTO",lambda s:(s<=0).mean()),SLA_D1=("SLA_RECEBIMENTO",lambda s:(s<=1).mean()),SLA_D2=("SLA_RECEBIMENTO",lambda s:(s<=2).mean()),SLA_D3=("SLA_RECEBIMENTO",lambda s:(s<=3).mean()),SLA_D4=("SLA_RECEBIMENTO",lambda s:(s<=4).mean()))
     longa=mensal.melt(id_vars=["MES_REF","Recebimentos"],value_vars=["SLA_D0","SLA_D1","SLA_D2","SLA_D3","SLA_D4"],var_name="SLA",value_name="Percentual")
     longa["Mês"]=longa["MES_REF"].dt.strftime("%m/%Y")
-    fig=px.line(longa,x="Mês",y="Percentual",color="SLA",markers=True,text=longa["Percentual"].map(lambda x:fmt_pct(x)),title="Evolução mensal do SLA acumulado")
+    fig=px.line(longa,x="Mês",y="Percentual",color="SLA",markers=True,text=longa["Percentual"].map(lambda x:fmt_pct(x)),title="Evolução mensal do SLA")
     fig.update_yaxes(tickformat=".0%",range=[0,1.08]); fig.update_traces(textposition="top center")
     st.plotly_chart(fig,use_container_width=True)
 
