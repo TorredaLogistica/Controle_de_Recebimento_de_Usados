@@ -47,22 +47,30 @@ def metric_cards(data):
     total = len(data)
     buckets = [("D+0", 0), ("D+1", 1), ("D+2", 2), ("D+3", 3), ("D+4", 4), ("Acima de D+4", None)]
     cols = st.columns(6)
+
     for col, (label, lim) in zip(cols, buckets):
         if lim is None:
             qtd = int((data["SLA_RECEBIMENTO"] > 4).sum())
-            pct = qtd / total if total else 0
-            detalhe = f"{fmt_pct(pct)} do total"
+            pct_faixa = qtd / total if total else 0
+            detalhe = f"{fmt_pct(pct_faixa)} do total"
         else:
             qtd = int((data["SLA_RECEBIMENTO"] == lim).sum())
+            pct_faixa = qtd / total if total else 0
             acumulado = int((data["SLA_RECEBIMENTO"] <= lim).sum())
-            pct = acumulado / total if total else 0
-            detalhe = f"Acumulado até D+{lim}: {fmt_pct(pct)}"
-        col.markdown(f"""
-        <div class="sla-card">
-          <div class="sla-card-title">SLA {label}</div>
-          <div class="sla-card-value">{fmt_int(qtd)}</div>
-          <div class="sla-card-detail">{detalhe}</div>
-        </div>""", unsafe_allow_html=True)
+            pct_acumulado = acumulado / total if total else 0
+            detalhe = f"Acumulado até D+{lim}: {fmt_pct(pct_acumulado)}"
+
+        col.markdown(
+            f"""
+            <div class="sla-card">
+              <div class="sla-card-title">SLA {label}</div>
+              <div class="sla-card-percent">{fmt_pct(pct_faixa)}</div>
+              <div class="sla-card-value">{fmt_int(qtd)}</div>
+              <div class="sla-card-detail">{detalhe}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 def executive_summary(data, months=3):
     if data.empty: return "Sem dados para os filtros selecionados."
@@ -77,9 +85,10 @@ def executive_summary(data, months=3):
 
 st.markdown("""<style>
 .block-container{padding-top:1.4rem}.kpi-note{background:#fff7f7;border-left:7px solid #e30613;padding:17px 22px;border-radius:10px;margin:8px 0 20px}.small{color:#65707d;font-size:.89rem}
-.sla-card{width:100%;min-height:170px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5px 3px 12px;box-sizing:border-box}
-.sla-card-title{width:100%;min-height:38px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:14px;line-height:1.3}
-.sla-card-value{width:100%;text-align:center;font-size:39px;line-height:1.15;color:#202536;margin:3px 0 10px}
+.sla-card{width:100%;min-height:190px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5px 3px 12px;box-sizing:border-box}
+.sla-card-title{width:100%;min-height:32px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:14px;line-height:1.3}
+.sla-card-percent{width:100%;text-align:center;font-size:18px;font-weight:700;line-height:1.2;color:#202536;margin:0 0 5px}
+.sla-card-value{width:100%;text-align:center;font-size:39px;line-height:1.15;color:#202536;margin:0 0 10px}
 .sla-card-detail{width:100%;min-height:62px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal!important;overflow:visible!important;background:#e5f7ec;color:#008a3b;border-radius:14px;padding:8px;font-size:14px;font-weight:600;line-height:1.35;box-sizing:border-box}
 
 </style>""", unsafe_allow_html=True)
@@ -262,7 +271,7 @@ else:
     mensal=evo.groupby("MES_REF",as_index=False).agg(Recebimentos=("NOTAFISCAL","size"),SLA_D0=("SLA_RECEBIMENTO",lambda s:(s<=0).mean()),SLA_D1=("SLA_RECEBIMENTO",lambda s:(s<=1).mean()),SLA_D2=("SLA_RECEBIMENTO",lambda s:(s<=2).mean()),SLA_D3=("SLA_RECEBIMENTO",lambda s:(s<=3).mean()),SLA_D4=("SLA_RECEBIMENTO",lambda s:(s<=4).mean()))
     longa=mensal.melt(id_vars=["MES_REF","Recebimentos"],value_vars=["SLA_D0","SLA_D1","SLA_D2","SLA_D3","SLA_D4"],var_name="SLA",value_name="Percentual")
     longa["Mês"]=longa["MES_REF"].dt.strftime("%m/%Y")
-    fig=px.line(longa,x="Mês",y="Percentual",color="SLA",markers=True,text=longa["Percentual"].map(lambda x:fmt_pct(x)),title="Evolução mensal do SLA")
+    fig=px.line(longa,x="Mês",y="Percentual",color="SLA",markers=True,text=longa["Percentual"].map(lambda x:fmt_pct(x)),title="Evolução mensal do SLA acumulado")
     fig.update_yaxes(tickformat=".0%",range=[0,1.08]); fig.update_traces(textposition="top center")
     st.plotly_chart(fig,use_container_width=True)
 
