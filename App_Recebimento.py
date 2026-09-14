@@ -44,19 +44,25 @@ def fmt_int(v): return f"{int(v):,}".replace(",", ".")
 def fmt_pct(v): return f"{v:.1%}".replace(".", ",")
 
 def metric_cards(data):
-    total=len(data)
-    buckets=[("D+0",0),("D+1",1),("D+2",2),("D+3",3),("D+4",4),("Acima de D+4",None)]
-    cols=st.columns(6)
-    for col,(label,lim) in zip(cols,buckets):
+    total = len(data)
+    buckets = [("D+0", 0), ("D+1", 1), ("D+2", 2), ("D+3", 3), ("D+4", 4), ("Acima de D+4", None)]
+    cols = st.columns(6)
+    for col, (label, lim) in zip(cols, buckets):
         if lim is None:
-            qtd=int((data["SLA_RECEBIMENTO"]>4).sum()); pct=qtd/total if total else 0
-            sub=f"{fmt_pct(pct)} do total"
+            qtd = int((data["SLA_RECEBIMENTO"] > 4).sum())
+            pct = qtd / total if total else 0
+            detalhe = f"{fmt_pct(pct)} do total"
         else:
-            qtd=int((data["SLA_RECEBIMENTO"]==lim).sum())
-            acum=int((data["SLA_RECEBIMENTO"]<=lim).sum())
-            pct=acum/total if total else 0
-            sub=f"Acumulado até D+{lim}: {fmt_pct(pct)}"
-        col.metric(f"SLA {label}", fmt_int(qtd), sub)
+            qtd = int((data["SLA_RECEBIMENTO"] == lim).sum())
+            acum = int((data["SLA_RECEBIMENTO"] <= lim).sum())
+            pct = acum / total if total else 0
+            detalhe = f"Acumulado até D+{lim}: {fmt_pct(pct)}"
+        col.markdown(f"""
+        <div class="sla-card">
+          <div class="sla-card-title">SLA {label}</div>
+          <div class="sla-card-value">{fmt_int(qtd)}</div>
+          <div class="sla-card-detail">{detalhe}</div>
+        </div>""", unsafe_allow_html=True)
 
 def executive_summary(data, months=3):
     if data.empty: return "Sem dados para os filtros selecionados."
@@ -71,6 +77,11 @@ def executive_summary(data, months=3):
 
 st.markdown("""<style>
 .block-container{padding-top:1.4rem}.kpi-note{background:#fff7f7;border-left:7px solid #e30613;padding:17px 22px;border-radius:10px;margin:8px 0 20px}.small{color:#65707d;font-size:.89rem}
+.sla-card{width:100%;min-height:165px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5px 3px 12px;box-sizing:border-box}
+.sla-card-title{width:100%;min-height:38px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:14px;line-height:1.3}
+.sla-card-value{width:100%;text-align:center;font-size:39px;line-height:1.15;color:#202536;margin:3px 0 10px}
+.sla-card-detail{width:100%;min-height:58px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal!important;overflow:visible!important;background:#e5f7ec;color:#008a3b;border-radius:14px;padding:7px 7px;font-size:13px;line-height:1.3;box-sizing:border-box}
+
 </style>""", unsafe_allow_html=True)
 st.title("📦 Controle de Recebimento de Materiais")
 st.markdown('<div class="kpi-note"><b>Controle de Recebimentos</b><br>Monitoramento do prazo entre o recebimento físico e o lançamento no SAP, considerando os tipos selecionados nos filtros.</div>', unsafe_allow_html=True)
@@ -143,8 +154,16 @@ if vis.startswith("📅"):
             fig.update_layout(bargap=0.18)
             st.plotly_chart(fig, use_container_width=True)
     with c2:
-        dist=data["FAIXA_SLA"].value_counts(sort=False).rename_axis("Faixa").reset_index(name="Quantidade")
         ordem_faixas = ["D+0", "D+1", "D+2", "D+3", "D+4", "Acima de D+4"]
+        dist = (data["FAIXA_SLA"].value_counts(sort=False)
+                .reindex(ordem_faixas, fill_value=0)
+                .rename_axis("Faixa").reset_index(name="Quantidade"))
+        total_dist = int(dist["Quantidade"].sum())
+        dist["Percentual"] = dist["Quantidade"] / total_dist if total_dist else 0
+        dist["Percentual_acumulado"] = dist["Percentual"].cumsum()
+        dist["Pct"] = dist["Percentual"].map(fmt_pct)
+        dist["Pct_acum"] = dist["Percentual_acumulado"].map(fmt_pct)
+        dist["Rotulo"] = dist.apply(lambda r: f"{fmt_int(r['Quantidade'])}<br>{r['Pct']}<br>Acum. {r['Pct_acum']}", axis=1)
         cores_sla = {
             "D+0": "#0B70C9",
             "D+1": "#72B9EB",
@@ -158,11 +177,19 @@ if vis.startswith("📅"):
             x="Faixa",
             y="Quantidade",
             color="Faixa",
-            text_auto=True,
+            text="Rotulo",
+            custom_data=["Pct", "Pct_acum"],
             title="Distribuição por faixa de SLA",
             category_orders={"Faixa": ordem_faixas},
             color_discrete_map=cores_sla,
         )
+        fig.update_traces(
+            textposition="outside", cliponaxis=False,
+            hovertemplate="Faixa: %{x}<br>Quantidade: %{y}<br>Percentual: %{customdata[0]}<br>Percentual acumulado: %{customdata[1]}<extra></extra>",
+        )
+        maior_volume = int(dist["Quantidade"].max()) if not dist.empty else 0
+        fig.update_yaxes(range=[0, max(maior_volume * 1.35, 1)])
+        fig.update_layout(height=540, margin=dict(t=70, r=20, b=85, l=55))
         st.plotly_chart(fig,use_container_width=True)
 
     # Comparativo por CD no mesmo padrão visual da distribuição geral.
