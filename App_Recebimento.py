@@ -245,24 +245,78 @@ else:
     fig.update_yaxes(tickformat=".0%",range=[0,1.08]); fig.update_traces(textposition="top center")
     st.plotly_chart(fig,use_container_width=True)
 
-    # Comparativo mensal em barras agrupadas: Até D+0, Até D+1, Até D+2, Até D+3 e Até D+4.
-    nomes_sla = {"SLA_D0": "Até D+0", "SLA_D1": "Até D+1", "SLA_D2": "Até D+2", "SLA_D3": "Até D+3", "SLA_D4": "Até D+4"}
-    cores_acumuladas = {"Até D+0": "#0B70C9", "Até D+1": "#72B9EB", "Até D+2": "#FF1F26", "Até D+3": "#F7A6AA", "Até D+4": "#2AA894"}
-    barras_mensais = mensal.melt(id_vars=["MES_REF"], value_vars=list(nomes_sla), var_name="SLA", value_name="Percentual")
+    # Comparativo mensal em linhas, com destaque visual para Até D+2 e Até D+4.
+    nomes_sla = {
+        "SLA_D0": "Até D+0",
+        "SLA_D1": "Até D+1",
+        "SLA_D2": "Até D+2",
+        "SLA_D3": "Até D+3",
+        "SLA_D4": "Até D+4",
+    }
+    cores_acumuladas = {
+        "Até D+0": "#AEB8C4",
+        "Até D+1": "#8FC5EA",
+        "Até D+2": "#FF1F26",
+        "Até D+3": "#F4B0B4",
+        "Até D+4": "#1A9D88",
+    }
+    barras_mensais = mensal.melt(
+        id_vars=["MES_REF"],
+        value_vars=list(nomes_sla),
+        var_name="SLA",
+        value_name="Percentual",
+    )
     barras_mensais["Mês"] = barras_mensais["MES_REF"].dt.strftime("%m/%Y")
     barras_mensais["Faixa acumulada"] = barras_mensais["SLA"].map(nomes_sla)
     barras_mensais["Rótulo"] = barras_mensais["Percentual"].map(fmt_pct)
     ordem_meses = mensal["MES_REF"].dt.strftime("%m/%Y").tolist()
-    fig_barras = px.bar(
-        barras_mensais, x="Mês", y="Percentual", color="Faixa acumulada", text="Rótulo",
-        barmode="group", title="SLA acumulado por mês",
-        category_orders={"Mês": ordem_meses, "Faixa acumulada": list(nomes_sla.values())},
+
+    fig_barras = px.line(
+        barras_mensais,
+        x="Mês",
+        y="Percentual",
+        color="Faixa acumulada",
+        markers=True,
+        text="Rótulo",
+        title="SLA acumulado por mês | Destaque Até D+2 e Até D+4",
+        category_orders={
+            "Mês": ordem_meses,
+            "Faixa acumulada": ["Até D+0", "Até D+1", "Até D+2", "Até D+3", "Até D+4"],
+        },
         color_discrete_map=cores_acumuladas,
     )
-    fig_barras.update_traces(textposition="outside", cliponaxis=False, textfont_size=13,
-                             hovertemplate="Mês: %{x}<br>%{fullData.name}: %{text}<extra></extra>")
-    fig_barras.update_yaxes(title_text="Percentual", tickformat=".0%", range=[0, 1.14])
-    fig_barras.update_layout(height=560, legend_title_text="SLA acumulado", bargap=0.20, bargroupgap=0.05)
+
+    # Linhas secundárias permanecem mais discretas para priorizar D+2 e D+4.
+    estilos_linhas = {
+        "Até D+0": {"width": 1.5, "dash": "dot"},
+        "Até D+1": {"width": 1.5, "dash": "dot"},
+        "Até D+2": {"width": 4.5, "dash": "solid"},
+        "Até D+3": {"width": 1.5, "dash": "dot"},
+        "Até D+4": {"width": 4.5, "dash": "solid"},
+    }
+    for trace in fig_barras.data:
+        destaque = trace.name in ["Até D+2", "Até D+4"]
+        trace.update(
+            mode="lines+markers+text",
+            line=estilos_linhas[trace.name],
+            marker=dict(size=11 if destaque else 7, line=dict(width=2 if destaque else 0, color="white")),
+            textfont=dict(size=14 if destaque else 11, color=cores_acumuladas[trace.name]),
+            textposition="top center" if trace.name != "Até D+4" else "bottom center",
+            opacity=1.0 if destaque else 0.50,
+            hovertemplate="Mês: %{x}<br>%{fullData.name}: %{text}<extra></extra>",
+        )
+
+    fig_barras.update_yaxes(
+        title_text="Percentual",
+        tickformat=".0%",
+        range=[0, 1.10],
+    )
+    fig_barras.update_layout(
+        height=590,
+        legend_title_text="SLA acumulado",
+        hovermode="x unified",
+        margin=dict(t=80, r=30, b=70, l=65),
+    )
     st.plotly_chart(fig_barras, use_container_width=True)
 
     fig2=px.bar(mensal.assign(Mês=mensal["MES_REF"].dt.strftime("%m/%Y")),x="Mês",y="Recebimentos",text_auto=True,title="Volume mensal de recebimentos")
