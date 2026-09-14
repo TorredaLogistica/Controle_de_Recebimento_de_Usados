@@ -161,9 +161,9 @@ if vis.startswith("📅"):
     fig.update_layout(height=610, margin=dict(t=75, r=30, b=90, l=65), showlegend=True)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Comparativo por CD no mesmo padrão visual da distribuição geral.
-    st.subheader("Distribuição do SLA por CD")
-    dados_cd = data.dropna(subset=["CD_CORRIGIDO", "FAIXA_SLA"]).copy()
+    # SLA acumulado por CD em percentual.
+    st.subheader("SLA acumulado por CD")
+    dados_cd = data.dropna(subset=["CD_CORRIGIDO", "SLA_RECEBIMENTO"]).copy()
     dados_cd["CD_CORRIGIDO"] = dados_cd["CD_CORRIGIDO"].astype(str).str.strip()
     dados_cd = dados_cd[dados_cd["CD_CORRIGIDO"] != ""]
 
@@ -171,64 +171,85 @@ if vis.startswith("📅"):
         st.info("Não há dados de CD para o mês e os filtros selecionados.")
     else:
         sla_cd = (
-            dados_cd.groupby(["CD_CORRIGIDO", "FAIXA_SLA"], observed=True)
-            .size()
-            .reset_index(name="Quantidade")
+            dados_cd.groupby("CD_CORRIGIDO", as_index=False)
+            .agg(
+                Total=("NOTAFISCAL", "size"),
+                SLA_D0=("SLA_RECEBIMENTO", lambda x: (x <= 0).mean()),
+                SLA_D1=("SLA_RECEBIMENTO", lambda x: (x <= 1).mean()),
+                SLA_D2=("SLA_RECEBIMENTO", lambda x: (x <= 2).mean()),
+                SLA_D3=("SLA_RECEBIMENTO", lambda x: (x <= 3).mean()),
+                SLA_D4=("SLA_RECEBIMENTO", lambda x: (x <= 4).mean()),
+            )
+            .sort_values("Total", ascending=False)
         )
-        totais_cd = (
-            sla_cd.groupby("CD_CORRIGIDO", as_index=False)["Quantidade"]
-            .sum()
-            .rename(columns={"Quantidade": "Total_CD"})
+        nomes_cd = {
+            "SLA_D0": "Até D+0", "SLA_D1": "Até D+1", "SLA_D2": "Até D+2",
+            "SLA_D3": "Até D+3", "SLA_D4": "Até D+4",
+        }
+        ordem_cds = sla_cd["CD_CORRIGIDO"].tolist()
+        sla_cd_longo = sla_cd.melt(
+            id_vars=["CD_CORRIGIDO", "Total"],
+            value_vars=list(nomes_cd),
+            var_name="SLA",
+            value_name="Percentual",
         )
-        sla_cd = sla_cd.merge(totais_cd, on="CD_CORRIGIDO", how="left")
-        sla_cd["Percentual_CD"] = sla_cd["Quantidade"] / sla_cd["Total_CD"]
-        sla_cd["Percentual_formatado"] = sla_cd["Percentual_CD"].map(fmt_pct)
+        sla_cd_longo["SLA acumulado"] = sla_cd_longo["SLA"].map(nomes_cd)
+        sla_cd_longo["Rótulo"] = sla_cd_longo["Percentual"].map(fmt_pct)
 
-        ordem_cds = (
-            totais_cd.sort_values("Total_CD", ascending=False)["CD_CORRIGIDO"]
-            .tolist()
-        )
-
-        fig_cd = px.bar(
-            sla_cd,
+        cores_cd = {
+            "Até D+0": "#AEB8C4", "Até D+1": "#8FC5EA", "Até D+2": "#FF1F26",
+            "Até D+3": "#F4B0B4", "Até D+4": "#1A9D88",
+        }
+        fig_cd = px.line(
+            sla_cd_longo,
             x="CD_CORRIGIDO",
-            y="Quantidade",
-            color="FAIXA_SLA",
-            text="Quantidade",
-            barmode="group",
-            title=f"SLA por CD | {pd.Timestamp(mes).strftime('%m/%Y')}",
+            y="Percentual",
+            color="SLA acumulado",
+            markers=True,
+            text="Rótulo",
+            custom_data=["Total"],
+            title=f"SLA acumulado por CD | {pd.Timestamp(mes).strftime('%m/%Y')}",
             category_orders={
                 "CD_CORRIGIDO": ordem_cds,
-                "FAIXA_SLA": ordem_faixas,
+                "SLA acumulado": ["Até D+0", "Até D+1", "Até D+2", "Até D+3", "Até D+4"],
             },
-            color_discrete_map=cores_sla,
-            custom_data=["Percentual_formatado", "Total_CD"],
-            labels={
-                "CD_CORRIGIDO": "CD",
-                "FAIXA_SLA": "Faixa",
-                "Quantidade": "Quantidade",
-            },
+            color_discrete_map=cores_cd,
+            labels={"CD_CORRIGIDO": "CD"},
         )
-        fig_cd.update_traces(
-            textposition="outside",
-            cliponaxis=False,
-            hovertemplate=(
-                "CD: %{x}<br>"
-                "Faixa: %{fullData.name}<br>"
-                "Quantidade: %{y}<br>"
-                "Percentual no CD: %{customdata[0]}<br>"
-                "Total do CD: %{customdata[1]}<extra></extra>"
-            ),
-        )
+        estilos_cd = {
+            "Até D+0": {"width": 1.5, "dash": "dot"},
+            "Até D+1": {"width": 1.5, "dash": "dot"},
+            "Até D+2": {"width": 4.5, "dash": "solid"},
+            "Até D+3": {"width": 1.5, "dash": "dot"},
+            "Até D+4": {"width": 4.5, "dash": "solid"},
+        }
+        posicoes_cd = {
+            "Até D+0": "bottom left", "Até D+1": "top left", "Até D+2": "bottom center",
+            "Até D+3": "top right", "Até D+4": "top center",
+        }
+        for trace in fig_cd.data:
+            destaque = trace.name in ["Até D+2", "Até D+4"]
+            trace.update(
+                mode="lines+markers+text",
+                line=estilos_cd[trace.name],
+                marker=dict(size=11 if destaque else 7,
+                            line=dict(width=2 if destaque else 0, color="white")),
+                textfont=dict(size=14 if destaque else 10, color=cores_cd[trace.name]),
+                textposition=posicoes_cd[trace.name],
+                opacity=1.0 if destaque else 0.55,
+                hovertemplate=(
+                    "CD: %{x}<br>%{fullData.name}: %{text}<br>"
+                    "Total do CD: %{customdata[0]}<extra></extra>"
+                ),
+            )
+        fig_cd.update_yaxes(title_text="Percentual", tickformat=".0%", range=[0, 1.13])
+        fig_cd.update_xaxes(title_text="CD", tickangle=-35)
         fig_cd.update_layout(
-            xaxis_title="CD",
-            yaxis_title="Quantidade",
-            legend_title_text="Faixa",
-            bargap=0.18,
-            bargroupgap=0.06,
-            height=max(480, min(760, 440 + len(ordem_cds) * 12)),
+            height=650,
+            legend_title_text="SLA acumulado",
+            hovermode="x unified",
+            margin=dict(t=80, r=30, b=120, l=65),
         )
-        fig_cd.update_xaxes(tickangle=-35)
         st.plotly_chart(fig_cd, use_container_width=True)
 
     st.subheader("Detalhamento dos recebimentos")
@@ -297,34 +318,30 @@ else:
     for trace in fig_barras.data:
         destaque = trace.name in ["Até D+2", "Até D+4"]
 
-        # Exibe rótulos somente nos SLAs destacados para evitar sobreposição.
-        # Até D+4 fica acima da linha e Até D+2 abaixo da linha.
-        if trace.name == "Até D+4":
-            modo_trace = "lines+markers+text"
-            posicao_texto = "top center"
-        elif trace.name == "Até D+2":
-            modo_trace = "lines+markers+text"
-            posicao_texto = "bottom center"
-        else:
-            modo_trace = "lines+markers"
-            posicao_texto = "top center"
+        # Mantém todos os percentuais visíveis e distribui os rótulos em posições
+        # diferentes para reduzir sobreposição entre as cinco linhas.
+        posicoes_rotulos = {
+            "Até D+0": "bottom left",
+            "Até D+1": "top left",
+            "Até D+2": "bottom center",
+            "Até D+3": "top right",
+            "Até D+4": "top center",
+        }
 
         trace.update(
-            mode=modo_trace,
+            mode="lines+markers+text",
             line=estilos_linhas[trace.name],
             marker=dict(
                 size=11 if destaque else 7,
                 line=dict(width=2 if destaque else 0, color="white"),
             ),
             textfont=dict(
-                size=14 if destaque else 11,
+                size=14 if destaque else 10,
                 color=cores_acumuladas[trace.name],
             ),
-            textposition=posicao_texto,
-            text=None if not destaque else trace.text,
-            opacity=1.0 if destaque else 0.42,
-            hovertemplate="Mês: %{x}<br>%{fullData.name}: %{customdata}<extra></extra>",
-            customdata=trace.text,
+            textposition=posicoes_rotulos[trace.name],
+            opacity=1.0 if destaque else 0.55,
+            hovertemplate="Mês: %{x}<br>%{fullData.name}: %{text}<extra></extra>",
         )
 
     fig_barras.update_yaxes(
