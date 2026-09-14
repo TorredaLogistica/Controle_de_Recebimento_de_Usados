@@ -54,8 +54,8 @@ def metric_cards(data):
             detalhe = f"{fmt_pct(pct)} do total"
         else:
             qtd = int((data["SLA_RECEBIMENTO"] == lim).sum())
-            acum = int((data["SLA_RECEBIMENTO"] <= lim).sum())
-            pct = acum / total if total else 0
+            acumulado = int((data["SLA_RECEBIMENTO"] <= lim).sum())
+            pct = acumulado / total if total else 0
             detalhe = f"Acumulado até D+{lim}: {fmt_pct(pct)}"
         col.markdown(f"""
         <div class="sla-card">
@@ -77,10 +77,10 @@ def executive_summary(data, months=3):
 
 st.markdown("""<style>
 .block-container{padding-top:1.4rem}.kpi-note{background:#fff7f7;border-left:7px solid #e30613;padding:17px 22px;border-radius:10px;margin:8px 0 20px}.small{color:#65707d;font-size:.89rem}
-.sla-card{width:100%;min-height:165px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5px 3px 12px;box-sizing:border-box}
+.sla-card{width:100%;min-height:170px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5px 3px 12px;box-sizing:border-box}
 .sla-card-title{width:100%;min-height:38px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:14px;line-height:1.3}
 .sla-card-value{width:100%;text-align:center;font-size:39px;line-height:1.15;color:#202536;margin:3px 0 10px}
-.sla-card-detail{width:100%;min-height:58px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal!important;overflow:visible!important;background:#e5f7ec;color:#008a3b;border-radius:14px;padding:7px 7px;font-size:13px;line-height:1.3;box-sizing:border-box}
+.sla-card-detail{width:100%;min-height:62px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal!important;overflow:visible!important;background:#e5f7ec;color:#008a3b;border-radius:14px;padding:8px;font-size:14px;font-weight:600;line-height:1.35;box-sizing:border-box}
 
 </style>""", unsafe_allow_html=True)
 st.title("📦 Controle de Recebimento de Materiais")
@@ -114,83 +114,52 @@ base=apply(df)
 if vis.startswith("📅"):
     data=base[base["MES_REF"]==pd.Timestamp(mes)].copy()
     metric_cards(data)
-    c1,c2=st.columns([1.55,1])
-    with c1:
-        # Cria o dia antes do agrupamento para manter compatibilidade com o pandas do Streamlit Cloud.
-        daily = data.dropna(subset=["DATA RECEBIMENTO"]).copy()
-        daily["Dia_num"] = daily["DATA RECEBIMENTO"].dt.day
-        daily = (
-            daily.groupby("Dia_num", as_index=False)
-            .agg(
-                Recebimentos=("NOTAFISCAL", "size"),
-                SLA_ate_D1=("SLA_RECEBIMENTO", lambda s: (s <= 1).mean()),
-                SLA_ate_D4=("SLA_RECEBIMENTO", lambda s: (s <= 4).mean()),
-            )
-            .sort_values("Dia_num")
-        )
-        daily["Dia"] = daily["Dia_num"].astype(str)
-        ordem_dias = daily["Dia"].tolist()
+    ordem_faixas = ["D+0", "D+1", "D+2", "D+3", "D+4", "Acima de D+4"]
+    cores_sla = {
+        "D+0": "#0B70C9", "D+1": "#72B9EB", "D+2": "#FF1F26",
+        "D+3": "#F7A6AA", "D+4": "#2AA894", "Acima de D+4": "#6DDE98",
+    }
 
-        if daily.empty:
-            st.info("Não há recebimentos com data válida para o mês e os filtros selecionados.")
-        else:
-            fig = px.bar(
-                daily,
-                x="Dia",
-                y="Recebimentos",
-                text="Recebimentos",
-                title=f"Recebimentos por dia | {pd.Timestamp(mes).strftime('%m/%Y')}",
-                category_orders={"Dia": ordem_dias},
-            )
-            fig.update_traces(textposition="inside", textfont_color="white")
-            fig.update_xaxes(
-                title_text="Dia do mês",
-                type="category",
-                tickmode="array",
-                tickvals=ordem_dias,
-                ticktext=ordem_dias,
-                tickangle=0,
-            )
-            fig.update_layout(bargap=0.18)
-            st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        ordem_faixas = ["D+0", "D+1", "D+2", "D+3", "D+4", "Acima de D+4"]
-        dist = (data["FAIXA_SLA"].value_counts(sort=False)
-                .reindex(ordem_faixas, fill_value=0)
-                .rename_axis("Faixa").reset_index(name="Quantidade"))
-        total_dist = int(dist["Quantidade"].sum())
-        dist["Percentual"] = dist["Quantidade"] / total_dist if total_dist else 0
-        dist["Percentual_acumulado"] = dist["Percentual"].cumsum()
-        dist["Pct"] = dist["Percentual"].map(fmt_pct)
-        dist["Pct_acum"] = dist["Percentual_acumulado"].map(fmt_pct)
-        dist["Rotulo"] = dist.apply(lambda r: f"{fmt_int(r['Quantidade'])}<br>{r['Pct']}<br>Acum. {r['Pct_acum']}", axis=1)
-        cores_sla = {
-            "D+0": "#0B70C9",
-            "D+1": "#72B9EB",
-            "D+2": "#FF1F26",
-            "D+3": "#F7A6AA",
-            "D+4": "#2AA894",
-            "Acima de D+4": "#6DDE98",
-        }
-        fig=px.bar(
-            dist,
-            x="Faixa",
-            y="Quantidade",
-            color="Faixa",
-            text="Rotulo",
-            custom_data=["Pct", "Pct_acum"],
-            title="Distribuição por faixa de SLA",
-            category_orders={"Faixa": ordem_faixas},
-            color_discrete_map=cores_sla,
-        )
-        fig.update_traces(
-            textposition="outside", cliponaxis=False,
-            hovertemplate="Faixa: %{x}<br>Quantidade: %{y}<br>Percentual: %{customdata[0]}<br>Percentual acumulado: %{customdata[1]}<extra></extra>",
-        )
-        maior_volume = int(dist["Quantidade"].max()) if not dist.empty else 0
-        fig.update_yaxes(range=[0, max(maior_volume * 1.35, 1)])
-        fig.update_layout(height=540, margin=dict(t=70, r=20, b=85, l=55))
-        st.plotly_chart(fig,use_container_width=True)
+    # Gráfico diário em largura total.
+    daily = data.dropna(subset=["DATA RECEBIMENTO"]).copy()
+    daily["Dia_num"] = daily["DATA RECEBIMENTO"].dt.day
+    daily = (daily.groupby("Dia_num", as_index=False)
+             .agg(Recebimentos=("NOTAFISCAL", "size"))
+             .sort_values("Dia_num"))
+    daily["Dia"] = daily["Dia_num"].astype(str)
+    ordem_dias = daily["Dia"].tolist()
+    if daily.empty:
+        st.info("Não há recebimentos com data válida para o mês e os filtros selecionados.")
+    else:
+        fig_dia = px.bar(daily, x="Dia", y="Recebimentos", text="Recebimentos",
+                         title=f"Recebimentos por dia | {pd.Timestamp(mes).strftime('%m/%Y')}",
+                         category_orders={"Dia": ordem_dias})
+        fig_dia.update_traces(textposition="inside", textfont_color="white", textfont_size=14)
+        fig_dia.update_xaxes(title_text="Dia do mês", type="category", tickmode="array",
+                             tickvals=ordem_dias, ticktext=ordem_dias, tickangle=0)
+        fig_dia.update_layout(height=470, bargap=0.18)
+        st.plotly_chart(fig_dia, use_container_width=True)
+
+    # Distribuição geral em largura total para os percentuais ficarem legíveis.
+    dist = (data["FAIXA_SLA"].value_counts(sort=False)
+            .reindex(ordem_faixas, fill_value=0)
+            .rename_axis("Faixa").reset_index(name="Quantidade"))
+    total_dist = int(dist["Quantidade"].sum())
+    dist["Percentual"] = dist["Quantidade"] / total_dist if total_dist else 0
+    dist["Percentual_acumulado"] = dist["Percentual"].cumsum()
+    dist["Pct"] = dist["Percentual"].map(fmt_pct)
+    dist["Pct_acum"] = dist["Percentual_acumulado"].map(fmt_pct)
+    dist["Rotulo"] = dist.apply(
+        lambda r: f"<b>{fmt_int(r['Quantidade'])}</b><br><b>{r['Pct']}</b><br>Acum. {r['Pct_acum']}", axis=1)
+    fig = px.bar(dist, x="Faixa", y="Quantidade", color="Faixa", text="Rotulo",
+                 custom_data=["Pct", "Pct_acum"], title="Distribuição por faixa de SLA",
+                 category_orders={"Faixa": ordem_faixas}, color_discrete_map=cores_sla)
+    fig.update_traces(textposition="outside", cliponaxis=False, textfont_size=15,
+                      hovertemplate="Faixa: %{x}<br>Quantidade: %{y}<br>Percentual: %{customdata[0]}<br>Percentual acumulado: %{customdata[1]}<extra></extra>")
+    maior = int(dist["Quantidade"].max()) if not dist.empty else 0
+    fig.update_yaxes(range=[0, max(maior * 1.38, 1)])
+    fig.update_layout(height=610, margin=dict(t=75, r=30, b=90, l=65), showlegend=True)
+    st.plotly_chart(fig, use_container_width=True)
 
     # Comparativo por CD no mesmo padrão visual da distribuição geral.
     st.subheader("Distribuição do SLA por CD")
@@ -275,6 +244,27 @@ else:
     fig=px.line(longa,x="Mês",y="Percentual",color="SLA",markers=True,text=longa["Percentual"].map(lambda x:fmt_pct(x)),title="Evolução mensal do SLA acumulado")
     fig.update_yaxes(tickformat=".0%",range=[0,1.08]); fig.update_traces(textposition="top center")
     st.plotly_chart(fig,use_container_width=True)
+
+    # Comparativo mensal em barras agrupadas: Até D+0, Até D+1, Até D+2, Até D+3 e Até D+4.
+    nomes_sla = {"SLA_D0": "Até D+0", "SLA_D1": "Até D+1", "SLA_D2": "Até D+2", "SLA_D3": "Até D+3", "SLA_D4": "Até D+4"}
+    cores_acumuladas = {"Até D+0": "#0B70C9", "Até D+1": "#72B9EB", "Até D+2": "#FF1F26", "Até D+3": "#F7A6AA", "Até D+4": "#2AA894"}
+    barras_mensais = mensal.melt(id_vars=["MES_REF"], value_vars=list(nomes_sla), var_name="SLA", value_name="Percentual")
+    barras_mensais["Mês"] = barras_mensais["MES_REF"].dt.strftime("%m/%Y")
+    barras_mensais["Faixa acumulada"] = barras_mensais["SLA"].map(nomes_sla)
+    barras_mensais["Rótulo"] = barras_mensais["Percentual"].map(fmt_pct)
+    ordem_meses = mensal["MES_REF"].dt.strftime("%m/%Y").tolist()
+    fig_barras = px.bar(
+        barras_mensais, x="Mês", y="Percentual", color="Faixa acumulada", text="Rótulo",
+        barmode="group", title="SLA acumulado por mês",
+        category_orders={"Mês": ordem_meses, "Faixa acumulada": list(nomes_sla.values())},
+        color_discrete_map=cores_acumuladas,
+    )
+    fig_barras.update_traces(textposition="outside", cliponaxis=False, textfont_size=13,
+                             hovertemplate="Mês: %{x}<br>%{fullData.name}: %{text}<extra></extra>")
+    fig_barras.update_yaxes(title_text="Percentual", tickformat=".0%", range=[0, 1.14])
+    fig_barras.update_layout(height=560, legend_title_text="SLA acumulado", bargap=0.20, bargroupgap=0.05)
+    st.plotly_chart(fig_barras, use_container_width=True)
+
     fig2=px.bar(mensal.assign(Mês=mensal["MES_REF"].dt.strftime("%m/%Y")),x="Mês",y="Recebimentos",text_auto=True,title="Volume mensal de recebimentos")
     st.plotly_chart(fig2,use_container_width=True)
     # Na tabela, converte a proporção decimal para percentual real.
